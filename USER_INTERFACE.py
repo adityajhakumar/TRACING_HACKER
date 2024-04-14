@@ -6,6 +6,9 @@ import requests
 import subprocess
 import re
 import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+import matplotlib.animation as animation
 
 # Constants for anomaly detection
 CPU_THRESHOLD = 80  # CPU usage threshold (percentage)
@@ -242,52 +245,130 @@ def calculate_distance(ip_address):
     except subprocess.CalledProcessError:
         return "N/A"
 
+# Function to run CPU consumption monitoring
+def run_cpu_consumption():
+    # Function to update the plot with new data
+    def update_plot(frame, process_data, ax):
+        # Get CPU usage percentage for each running process
+        for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'connections']):
+            if proc.info['cpu_percent'] > 20:  # Adjust the CPU usage threshold as needed
+                process_name = proc.info['name']
+                cpu_percent = proc.info['cpu_percent']
+                connections = proc.info['connections']
+                
+                # Check if the process has network connections
+                if connections:
+                    # Iterate over each network connection
+                    for conn in connections:
+                        if conn.status == psutil.CONN_ESTABLISHED:
+                            # Check if the process has an associated window
+                            try:
+                                proc.exe()
+                            except psutil.AccessDenied:
+                                # Ignore AccessDenied exception for system processes
+                                continue
+                            except psutil.NoSuchProcess:
+                                # Ignore NoSuchProcess exception if the process has terminated
+                                continue
+                            except psutil.ZombieProcess:
+                                # Ignore ZombieProcess exception for zombie processes
+                                continue
+                            else:
+                                # Print process details if CPU usage is high and no associated window is found
+                                process_output_text.insert(tk.END, f"Process Name: {process_name}, CPU Usage: {cpu_percent}%\n")
+                                process_output_text.insert(tk.END, f"    - Connection: {conn.laddr.ip}:{conn.laddr.port}\n")
+
+        # Get CPU usage percentage for all processes
+        cpu_percent = psutil.cpu_percent(interval=None, percpu=True)
+        
+        # Append the new CPU usage to the data list
+        process_data.append(np.mean(cpu_percent))
+        
+        # Limit the data list to a fixed length (e.g., keep only the last 50 data points)
+        if len(process_data) > 50:
+            process_data.pop(0)
+        
+        # Clear the previous plot and plot the updated data
+        ax.clear()
+        ax.plot(process_data, label='CPU Usage')
+        ax.set_title('CPU Usage (%)')
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel('CPU Usage (%)')
+        ax.legend(loc='upper left')
+
+    # Create an empty list to store CPU usage data
+    process_data = []
+
+    # Create a figure and axis for the plot
+    fig, ax = plt.subplots()
+
+    # Use FuncAnimation to update the plot every second
+    ani = animation.FuncAnimation(fig, update_plot, fargs=(process_data, ax), interval=1000, save_count=10)
+
+    # Show the dynamic plot
+    plt.show()
+# Function to stop CPU consumption monitoring
+def stop_cpu_consumption():
+    plt.close()  # Close the CPU consumption plot window
+
+# Button to stop CPU consumption monitoring
+stop_cpu_button = ttk.Button(root, text="Stop", command=stop_cpu_consumption)
+stop_cpu_button.grid(row=1, column=2, padx=10, pady=5, sticky="sw")
+
 # Create button to display performance details
 performance_button = ttk.Button(root, text="PERFORMANCE", command=display_performance)
-performance_button.grid(row=1, column=0, padx=10, pady=5, sticky="nw")
+performance_button.grid(row=3, column=0, padx=10, pady=5, sticky="nw")
 
 # Create button to hide performance details
 back_button = ttk.Button(root, text="Hide Performance", command=hide_performance, state=tk.DISABLED)
-back_button.grid(row=2, column=0, padx=10, pady=5, sticky="w")
+back_button.grid(row=4, column=0, padx=10, pady=5, sticky="w")
 
 # Create button to scan available connections
 scan_button = ttk.Button(root, text="Scan Connections", command=scan_connections)
-scan_button.grid(row=3, column=0, padx=10, pady=5, sticky="w")
+scan_button.grid(row=5, column=0, padx=10, pady=5, sticky="w")
 
 # Label for IP address entry
 ip_label = ttk.Label(root, text="Enter IP address:")
-ip_label.grid(row=4, column=0, padx=10, pady=5, sticky="w")
+ip_label.grid(row=6, column=0, padx=10, pady=5, sticky="w")
 
 # Entry for IP address input
 ip_entry = ttk.Entry(root)
-ip_entry.grid(row=5, column=0, padx=10, pady=5, sticky="w")
+ip_entry.grid(row=7, column=0, padx=10, pady=5, sticky="w")
 
 # Button to get IP details
 get_ip_details_button = ttk.Button(root, text="Get IP Details", command=get_ip_details)
-get_ip_details_button.grid(row=6, column=0, padx=10, pady=5, sticky="w")
+get_ip_details_button.grid(row=8, column=0, padx=10, pady=5, sticky="w")
 
 # Text widget to display IP details
 ip_details_text = tk.Text(root, height=10, width=40)
-ip_details_text.grid(row=7, column=0, padx=10, pady=5, sticky="w")
+ip_details_text.grid(row=9, column=0, padx=10, pady=5, sticky="w")
 
 # Text widget to display network connection details
 connections_text = tk.Text(root, height=10, width=80)
-connections_text.grid(row=8, column=0, padx=10, pady=5, sticky="w")
+connections_text.grid(row=10, column=0, padx=10, pady=5, sticky="w")
 
 # Label for threat details
 threat_label = ttk.Label(root, text="Threat Details:")
-threat_label.grid(row=9, column=0, padx=10, pady=5, sticky="w")
+threat_label.grid(row=11, column=0, padx=10, pady=5, sticky="w")
 
 # Text widget to display threat details
 threat_text = tk.Text(root, height=10, width=80)
-threat_text.grid(row=10, column=0, padx=10, pady=5, sticky="w")
+threat_text.grid(row=12, column=0, padx=10, pady=5, sticky="w")
 
 # Create button to scan Wi-Fi
 wifi_scan_button = ttk.Button(root, text="Scan WiFi", command=scan_wifi)
 wifi_scan_button.grid(row=0, column=1, padx=10, pady=10, sticky="nw")
 
+# Button to run CPU consumption monitoring
+cpu_consumption_button = ttk.Button(root, text="CPU Consumption", command=run_cpu_consumption)
+cpu_consumption_button.grid(row=1, column=1, padx=10, pady=5, sticky="nw")
+
+# Text widget to display CPU consumption output
+process_output_text = tk.Text(root, height=20, width=60)
+process_output_text.grid(row=2, column=1, rowspan=10, padx=10, pady=10, sticky="nw")
+
 # Text widget to display Wi-Fi scan output
 wifi_output_text = tk.Text(root, height=20, width=60)
-wifi_output_text.grid(row=1, column=1, rowspan=10, padx=10, pady=10, sticky="nw")
+wifi_output_text.grid(row=6, column=1, rowspan=10, padx=10, pady=10, sticky="nw")
 
 root.mainloop()
