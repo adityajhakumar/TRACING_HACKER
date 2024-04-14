@@ -3,6 +3,8 @@ from tkinter import ttk
 import psutil
 import socket
 import requests
+import subprocess
+import re
 import pandas as pd
 
 # Constants for anomaly detection
@@ -20,8 +22,8 @@ root = tk.Tk()
 root.title("System Performance and IP Details")
 
 # Define performance label
-performance_label = ttk.Label(root, text="")
-performance_label.pack()
+performance_label = ttk.Label(root, text="", wraplength=200)
+performance_label.grid(row=0, column=0, padx=10, pady=10, sticky="w")
 
 # Function to check CPU usage
 def check_cpu_usage():
@@ -162,44 +164,130 @@ def get_ip_details():
     ip_details_text.delete('1.0', tk.END)
     ip_details_text.insert(tk.END, ip_details)
 
+# Function to retrieve Wi-Fi network information and connected devices
+def scan_wifi():
+    wifi_output_text.delete('1.0', tk.END)  # Clear previous output
+    wifi_output_text.insert(tk.END, "Retrieving Wi-Fi network information...\n")
+    # Get Wi-Fi network information using netsh command
+    try:
+        network_info = subprocess.check_output(["netsh", "wlan", "show", "interfaces"]).decode("utf-8")
+        ssid_match = re.search(r"SSID\s+:\s+(.*)", network_info)
+        if ssid_match:
+            ssid = ssid_match.group(1).strip()
+            wifi_output_text.insert(tk.END, f"Connected Wi-Fi Network: {ssid}\n")
+        else:
+            wifi_output_text.insert(tk.END, "Not connected to a Wi-Fi network\n")
+    except subprocess.CalledProcessError:
+        wifi_output_text.insert(tk.END, "Error retrieving Wi-Fi network information\n")
+
+    # Get router location
+    router_location = get_location("192.168.1.1")  # Assuming the router IP address is known
+
+    # Get list of connected devices (ARP table)
+    try:
+        arp_output = subprocess.check_output(["arp", "-a"]).decode("utf-8")
+        devices = re.findall(r"([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\s+([0-9a-fA-F-]+)", arp_output)
+        for ip_address, mac_address in devices:
+            wifi_output_text.insert(tk.END, f"IP Address: {ip_address}, MAC Address: {mac_address}\n")
+            wifi_output_text.insert(tk.END, "-"*50 + "\n")  # Add horizontal line after each IP address details
+            # Check if IP address is multicast or broadcast
+            if is_multicast_or_broadcast(ip_address):
+                wifi_output_text.insert(tk.END, "Classification: Multicast/Broadcast\n")
+                wifi_output_text.insert(tk.END, "Distance from router: N/A meters\n")
+                wifi_output_text.insert(tk.END, "Location: Unknown\n")
+            else:
+                # Retrieve location information
+                location_info = get_location(ip_address)
+                distance = calculate_distance(ip_address)
+                wifi_output_text.insert(tk.END, f"Location: {location_info}\n")
+                wifi_output_text.insert(tk.END, f"Distance from router: {distance} meters\n")
+                if location_info == router_location:
+                    wifi_output_text.insert(tk.END, "Safe\n")
+                else:
+                    wifi_output_text.insert(tk.END, "Alert\n")
+    except subprocess.CalledProcessError:
+        wifi_output_text.insert(tk.END, "Error retrieving connected devices\n")
+
+# Function to check if IP address is multicast or broadcast
+def is_multicast_or_broadcast(ip_address):
+    return ip_address.startswith("224.") or ip_address == "255.255.255.255"
+
+# Function to retrieve location information based on IP address
+def get_location(ip_address):
+    try:
+        response = requests.get(f"http://ip-api.com/json/{ip_address}")
+        data = response.json()
+        if data["status"] == "success":
+            city = data["city"]
+            country = data["country"]
+            return f"{city}, {country}"
+        else:
+            return "Unknown"
+    except Exception as e:
+        print(f"Error retrieving location information for IP {ip_address}: {e}")
+        return "Unknown"
+
+# Function to calculate distance based on signal strength (for illustration purposes only, actual distance calculation may vary)
+def calculate_distance(ip_address):
+    try:
+        signal_output = subprocess.check_output(["ping", "-n", "1", ip_address]).decode("utf-8")
+        match = re.search(r"Average = (\d+)ms", signal_output)
+        if match:
+            ping_time = int(match.group(1))
+            # Example calculation for demonstration purposes only, adjust as needed
+            # Assuming a linear relationship between ping time and distance
+            return round(ping_time / 10)  # Adjust as needed based on your network conditions
+        else:
+            return "N/A"
+    except subprocess.CalledProcessError:
+        return "N/A"
+
 # Create button to display performance details
 performance_button = ttk.Button(root, text="PERFORMANCE", command=display_performance)
-performance_button.pack(pady=10)
+performance_button.grid(row=1, column=0, padx=10, pady=5, sticky="nw")
 
 # Create button to hide performance details
-back_button = ttk.Button(root, text="Go Back", command=hide_performance, state=tk.DISABLED)
-back_button.pack(pady=5)
+back_button = ttk.Button(root, text="Hide Performance", command=hide_performance, state=tk.DISABLED)
+back_button.grid(row=2, column=0, padx=10, pady=5, sticky="w")
 
 # Create button to scan available connections
-scan_button = ttk.Button(root, text="SCAN AVAILABLE CONNECTIONS", command=scan_connections)
-scan_button.pack(pady=5)
+scan_button = ttk.Button(root, text="Scan Connections", command=scan_connections)
+scan_button.grid(row=3, column=0, padx=10, pady=5, sticky="w")
 
 # Label for IP address entry
 ip_label = ttk.Label(root, text="Enter IP address:")
-ip_label.pack()
+ip_label.grid(row=4, column=0, padx=10, pady=5, sticky="w")
 
 # Entry for IP address input
 ip_entry = ttk.Entry(root)
-ip_entry.pack()
+ip_entry.grid(row=5, column=0, padx=10, pady=5, sticky="w")
 
 # Button to get IP details
 get_ip_details_button = ttk.Button(root, text="Get IP Details", command=get_ip_details)
-get_ip_details_button.pack(pady=5)
+get_ip_details_button.grid(row=6, column=0, padx=10, pady=5, sticky="w")
 
 # Text widget to display IP details
-ip_details_text = tk.Text(root, height=10, width=50)
-ip_details_text.pack()
+ip_details_text = tk.Text(root, height=10, width=40)
+ip_details_text.grid(row=7, column=0, padx=10, pady=5, sticky="w")
 
 # Text widget to display network connection details
-connections_text = tk.Text(root, height=10, width=100)
-connections_text.pack()
+connections_text = tk.Text(root, height=10, width=80)
+connections_text.grid(row=8, column=0, padx=10, pady=5, sticky="w")
 
 # Label for threat details
 threat_label = ttk.Label(root, text="Threat Details:")
-threat_label.pack()
+threat_label.grid(row=9, column=0, padx=10, pady=5, sticky="w")
 
 # Text widget to display threat details
-threat_text = tk.Text(root, height=10, width=100)
-threat_text.pack()
+threat_text = tk.Text(root, height=10, width=80)
+threat_text.grid(row=10, column=0, padx=10, pady=5, sticky="w")
+
+# Create button to scan Wi-Fi
+wifi_scan_button = ttk.Button(root, text="Scan WiFi", command=scan_wifi)
+wifi_scan_button.grid(row=0, column=1, padx=10, pady=10, sticky="nw")
+
+# Text widget to display Wi-Fi scan output
+wifi_output_text = tk.Text(root, height=20, width=60)
+wifi_output_text.grid(row=1, column=1, rowspan=10, padx=10, pady=10, sticky="nw")
 
 root.mainloop()
